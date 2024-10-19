@@ -1,0 +1,280 @@
+---
+title: "AMR data. Rstudio"
+author: "Brian"
+date: "2024-08-23"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r}
+###setting the environment
+
+library(tidyverse)
+library("dplyr")
+library(readr)
+library(purrr)
+library(reshape2)
+library(ggplot2)
+library(gtsummary)
+library(RColorBrewer)
+library("ppcor")
+library(haven)
+
+```
+
+```{r}
+amrdata <- read.csv("D:/AMR challenge/Datasets/2024_05_28 atlas_antibiotics.csv")
+```
+
+```{r filtering and cleaning}
+#First objective is to determine similarities and differences in ESBL producing Isolates across African countries.
+##Filtering the data by countries and phenotype (ESBL)
+filtered <- amrdata %>% 
+  filter(Country %in% c("South Africa", "Nigeria", "Cameroon", "Namibia", "Egypt", "Ghana", "Ivory Coast", "Kenya", "Malawi", "Morocco", "Uganda"), Phenotype == "ESBL")
+print(filtered, width = 100)
+table(filtered$Species)
+```
+
+```{r}
+genedata <- filtered %>% 
+  filter(if_any(c(TEM, SHV, AMPC, CTXM1, CTXM2, CTXM825, CTXM9, VEB, PER, GES, ACC, CMY1MOX, CMY11, DHA, FOX, ACTMIR, KPC, OXA, NDM, IMP, VIM, SPM,GIM ), ~ . != "" & . != "Unknown" & . != "NEG"))
+print(genedata, width = 100)
+table(genedata$Species)
+table(genedata$Year)
+names(genedata)
+```
+
+```{r}
+#removing empty columns
+non_empty_cols <- names(genedata)[sapply(genedata, function(x) !all(is.na(x) | x == ""))]
+non_empty_cols
+genedata_non_empty <- genedata[, non_empty_cols]
+print(genedata_non_empty, width = 100)
+table(genedata_non_empty$Species)
+
+gene_values <- map(genedata_non_empty[, non_empty_cols], unique)
+unique(genedata_non_empty$Species)
+```
+
+```{r}
+###filtering by species
+species_non_empty <- genedata_non_empty %>% 
+  filter(Species %in% c("Escherichia coli", "Klebsiella pneumoniae"))
+values <- map(species_non_empty, unique)
+non_specie_cols <- names(species_non_empty)[sapply(species_non_empty, function(x) !all(is.na(x) | x == ""))]
+non_specie_cols
+specieclean <- species_non_empty[, non_specie_cols]
+values_specie_clean1 <- map(specieclean, unique)
+
+###removing genes that were NEG or empty cells
+specieclean1 <- specieclean[, !(names(specieclean) %in% c("CTXM825", "ACC", "CMY1MOX", "FOX", "ACTMIR", "SPM", "GIM", "VEB", "GES", "IMP"))]
+values_species <- map(specieclean1, unique)
+table(specieclean1$Country)
+
+###saving the cleaned data 
+write_csv(specieclean1, "Africa data cleaned.csv")
+print(specieclean1, width = 100)
+
+```
+
+```{r}
+Africa_data <- read.csv("D:/AMR challenge/Datasets/Africa data cleaned.csv")
+```
+
+```{r}
+mapdata <- map_data("world")
+colnames(mapdata)[colnames(mapdata) == "region"] <- "Country"
+
+africa_mapdata <- mapdata %>% filter(Country %in% c("Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cabo Verde", 
+                       "Cameroon", "Central African Republic", "Chad", "Comoros", "Democratic Republic of the Congo",
+                       "Djibouti", "Egypt", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", "Gabon", 
+                       "Gambia", "Ghana", "Guinea", "Guinea-Bissau", "Ivory Coast", "Kenya", "Lesotho", 
+                       "Liberia", "Libya", "Madagascar", "Malawi", "Mali", "Mauritania", "Mauritius", 
+                       "Morocco", "Mozambique", "Namibia", "Niger", "Nigeria", "Republic of the Congo", 
+                       "Rwanda", "Sao Tome and Principe", "Senegal", "Seychelles", "Sierra Leone", 
+                       "Somalia", "South Africa", "South Sudan", "Sudan", "Tanzania", "Togo", "Tunisia", 
+                       "Uganda", "Zambia", "Zimbabwe"))
+```
+
+```{r}
+africadata1 <- Africa_data %>% 
+  mutate(Agecat = case_when(
+    Age.Group %in% c("0 to 2 Years", "13 to 18 Years") ~ "0-18",
+    Age.Group == "19 to 64 Years" ~ "19-64",
+    Age.Group %in% c("65 to 84 Years", "85 and Over") ~ "≥65",
+    Age.Group == "Unknown" ~ "Unknown"
+  ))
+
+table(africadata1$Agecat)
+```
+
+```{r}
+africadata2 <- africadata1 %>%
+  mutate(SourceCat = case_when(
+    Source %in% c("Bronchoalveolar lavage", "Bronchus", "Endotracheal aspirate", "Lungs", "Pleural Fluid", 
+                  "Respiratory: Other", "Sputum", "Throat", "Trachea", "Thoracentesis Fluid") ~ "Respiratory",
+    Source %in% c("Abdominal Fluid", "Appendix", "Colon", "Diverticulum", "Gall Bladder", "Gastric Abscess", 
+                  "Intestinal: Other", "Pancreas", "Peritoneal Fluid", "Stomach") ~ "Gastrointestinal",
+    Source %in% c("Bladder", "Kidney", "Ureter", "Urethra", "Urine") ~ "Urinary",
+    Source %in% c("Abscess", "Burn", "Carbuncle", "Cellulitis", "Impetiginous lesions", "Skin", "Skin: Other", 
+                  "Ulcer", "Wound", "Tissue Fluid", "Exudate") ~ "Skin and Soft Tissue",
+    Source %in% c("CNS: Other", "CSF") ~ "Central Nervous System",
+    Source %in% c("Blood", "Circulatory: Other") ~ "Blood and Cardiovascular",
+    Source %in% c("Prostate", "Vagina", "Genitourinary (non-urinary)") ~ "Genitourinary (non-urinary)",
+    Source %in% c("Catheters", "Drains", "Eye", "HEENT: Other", "Liver", "Synovial Fluid", "Bone") ~ "Other"
+  ))
+
+table(africadata2$SourceCat)
+
+```
+
+```{r}
+africadata3 <- africadata2 %>% 
+  mutate(Yearcat = case_when(
+    Year %in% c("2005", "2006", "2007", "2011") ~ "2005-2011",
+    Year %in% c("2012", "2013", "2014", "2015", "2016") ~ "2012-2016",
+    Year %in% c("2017", "2018", "2019", "2020", "2021") ~ "2017-2021"
+  ))
+
+table(africadata3$Yearcat)
+```
+
+```{r}
+africadata7 <- Africa_data %>%
+  mutate(across(c("AMPC", "SHV", "TEM", "CTXM1", "CTXM2", "CTXM9", "PER", "CMY11", "DHA", "KPC", "OXA", "NDM", "VIM"), ~ ifelse(. == "NEG", 0, 1))) %>%
+  rowwise() %>% 
+  mutate(Totalgenes = sum(c_across(c("AMPC", "SHV", "TEM", "CTXM1", "CTXM2", "CTXM9", "PER", "CMY11", "DHA", "KPC", "OXA", "NDM", "VIM")), na.rm = TRUE)) %>% 
+  ungroup()
+
+print(africadata7, width = 100)
+```
+
+```{r}
+africadata8 <- africadata7 %>% 
+  dplyr::select(Country, AMPC, SHV, TEM, CTXM1, CTXM2, CTXM9, PER, CMY11, DHA, KPC, OXA, NDM, VIM, Totalgenes)
+```
+
+```{r}
+africadata9 <- africadata8 %>% 
+  group_by(Country) %>% 
+  summarise(mean_mutations = mean(Totalgenes, na.rm = TRUE)) %>% 
+              ungroup()
+
+print(africadata9)
+```
+
+```{r}
+africadata10 <- left_join(africa_mapdata, africadata9, by="Country")
+
+print(africadata10, wide = 100)
+```
+
+```{r}
+map3 <- ggplot(africadata10, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = mean_mutations), color = "Black")
+map3
+```
+
+```{r}
+map4 <- map3 + 
+  scale_fill_gradient(
+    name = "Mean Mutations",
+    low = "white", 
+    high = "red", 
+    na.value = "white",
+    limits = c(3,4),
+    breaks = seq(3,4, by = 0.5)
+  ) +
+  theme(axis.text.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title.x = element_blank(),
+        rect = element_blank())
+map4
+
+ggsave(filename = "Mean Mutations.png", plot = map4, width = 10, height = 8, dpi = 300)
+
+```
+
+```{r resistance mean}
+africadataA <- Africa_data %>%
+  dplyr::select(Country, Amikacin_I, Amoxycillin.clavulanate_I, Ampicillin_I, Gentamicin_I, Trimethoprim.sulfa_I, Cefepime_I, Ceftazidime_I, Ceftriaxone_I, Imipenem_I, Levofloxacin_I, Meropenem_I, Piperacillin.tazobactam_I, Ciprofloxacin_I, Ertapenem_I)
+```
+
+```{r}
+africadataB <- africadataA %>% 
+  mutate(across(c("Amikacin_I", "Amoxycillin.clavulanate_I", "Ampicillin_I", "Gentamicin_I", "Trimethoprim.sulfa_I", "Cefepime_I", "Ceftazidime_I", "Ceftriaxone_I", "Imipenem_I", "Levofloxacin_I", "Meropenem_I", "Piperacillin.tazobactam_I", "Ciprofloxacin_I", "Ertapenem_I"), ~ ifelse(.== "Resistant", 1,0))) %>% 
+  rowwise() %>% 
+  mutate(totalres = sum(c_across(c("Amikacin_I", "Amoxycillin.clavulanate_I", "Ampicillin_I", "Gentamicin_I", "Trimethoprim.sulfa_I", "Cefepime_I", "Ceftazidime_I", "Ceftriaxone_I", "Imipenem_I", "Levofloxacin_I", "Meropenem_I", "Piperacillin.tazobactam_I", "Ciprofloxacin_I", "Ertapenem_I")), na.rm = TRUE)) %>%
+ungroup()
+```
+
+```{r}
+africadataC <- africadataB %>% 
+  group_by(Country) %>% 
+  summarise(meanres = mean(totalres, na.rm = TRUE)) %>% 
+  ungroup()
+
+print(africadataC)
+```
+
+```{r}
+africadataD <- left_join(africa_mapdata, africadataC, by="Country")
+```
+
+```{r}
+mapA <- ggplot(africadataD, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = meanres), color = "Black")
+mapA
+```
+
+```{r}
+mapB <- mapA + 
+  scale_fill_gradient(
+    name = "Average Resistance",
+    low = "white", 
+    high = "red", 
+    na.value = "white",
+    limits = c(4,7),
+    breaks = seq(4,7, by = 1)
+  ) +
+  theme(axis.text.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title.x = element_blank(),
+        rect = element_blank())
+mapB
+
+ggsave(filename = "Average resistance.png", plot = mapB, width = 10, height = 8, dpi = 300)
+```
+
+```{r}
+africadataE <- left_join(africadata9, africadataC, by = "Country")
+
+print(africadataE)
+```
+
+```{r}
+africadataF_spearman <- cor.test(africadataE$meanres, africadataE$mean_mutations, method = "spearman", exact = FALSE)
+
+print(paste("Spearman correlation: ", africadataF_spearman))
+
+
+ggplot(africadataE, aes(x = mean_mutations, y = meanres)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(x = "Mean Gene Mutations", y = "Mean Resistance", 
+       title = "Correlation between Gene Mutations and Resistance") +
+  theme_minimal()
+
+print(africadataF_spearman)
+
+```
+
+
+
+
+
+
+
